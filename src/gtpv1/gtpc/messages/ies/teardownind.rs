@@ -8,6 +8,9 @@ pub const TEARDOWN_IND: u8 = 19;
 pub const TEARDOWN_IND_LENGTH: u16 = 1;
 
 // Teardown Ind IE implementation
+//
+// Octet 2: LSB is Teardown Ind, upper 7 bits are spare. Encoding sets the
+// spare bits to '1' per Figure 24; decoding treats them as don't-care.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TeardownInd {
@@ -36,11 +39,7 @@ impl IEs for TeardownInd {
     fn unmarshal(buffer: &[u8]) -> Result<Self, GTPV1Error> {
         if buffer.len() >= (TEARDOWN_IND_LENGTH + 1) as usize {
             let data = TeardownInd {
-                teardown: match buffer[1] {
-                    0xfe => false,
-                    0xff => true,
-                    _ => return Err(GTPV1Error::IEIncorrect),
-                },
+                teardown: (buffer[1] & 0x01) != 0,
                 ..Default::default()
             };
             Ok(data)
@@ -78,4 +77,14 @@ fn teardown_ind_ie_marshal_test() {
     let mut buffer: Vec<u8> = vec![];
     test_struct.marshal(&mut buffer);
     assert_eq!(buffer, encoded_ie);
+}
+
+// Spare bits are ignored on decode; only the LSB determines the value.
+#[test]
+fn teardown_ind_ie_unmarshal_spare_bits_ignored_test() {
+    for (octet, expected) in [(0x00, false), (0x01, true), (0xaa, false), (0x55, true)] {
+        let encoded_ie: [u8; 2] = [0x13, octet];
+        let decoded = TeardownInd::unmarshal(&encoded_ie).unwrap();
+        assert_eq!(decoded.teardown, expected, "octet 0x{:02x}", octet);
+    }
 }
